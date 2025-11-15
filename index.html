@@ -1,0 +1,120 @@
+<!-- ===========================
+     index.html
+=========================== -->
+<!DOCTYPE html>
+<html>
+<head>
+  <title>AI Video Generator</title>
+  <meta charset="utf-8" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="container">
+    <h2>AI VIDEO GENERATOR</h2>
+
+    <textarea id="prompt" placeholder="Describe your video..."></textarea>
+
+    <button id="generateBtn">Generate Video</button>
+
+    <div id="status"></div>
+
+    <video id="video" controls></video>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
+
+<!-- ===========================
+     style.css
+=========================== -->
+<style>
+body {
+  font-family: Arial, sans-serif;
+  background: #0f172a;
+  color: white;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  margin: 0;
+}
+.container {
+  background: #1e293b;
+  padding: 25px;
+  border-radius: 12px;
+  width: 420px;
+  box-shadow: 0 0 20px #000;
+  text-align: center;
+}
+textarea {
+  width: 100%;
+  height: 90px;
+  margin-top: 10px;
+  padding: 10px;
+  border-radius: 8px;
+  background: #0f172a;
+  color: white;
+  border: 1px solid #334155;
+}
+button {
+  width: 100%;
+  padding: 12px;
+  background: #38bdf8;
+  color: #000;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  margin-top: 10px;
+  font-size: 16px;
+  font-weight: bold;
+}
+#status {
+  margin-top: 12px;
+  font-size: 14px;
+  color: #a3e635;
+}
+video {
+  width: 100%;
+  margin-top: 15px;
+  display: none;
+  border-radius: 8px;
+}
+</style>
+
+<!-- ===========================
+     app.js
+=========================== -->
+<script>
+const backendURL = "https://ai-vedos.onrender.com/generate";
+
+const btn = document.getElementById("generateBtn");
+const promptEl = document.getElementById("prompt");
+const statusEl = document.getElementById("status");
+const videoEl = document.getElementById("video");
+
+btn.onclick = async () => {
+  const prompt = promptEl.value.trim();
+  if (!prompt) return alert("Please enter a prompt!");
+
+  statusEl.textContent = "Generating video... This will take 15–40 seconds.";
+  videoEl.style.display = "none";
+  videoEl.src = "";
+
+  const res = await fetch(backendURL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt })
+  });
+
+  const data = await res.json();
+
+  if (data.video) {
+    statusEl.textContent = "Video Ready!";
+    videoEl.src = data.video;
+    videoEl.style.display = "block";
+  } else {
+    statusEl.textContent = "Generation failed. Try again.";
+  }
+};
+</script>
