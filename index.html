@@ -5,189 +5,127 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>AI Video Generator</title>
   <style>
-    :root{
-      --bg:#071029; --card:#0f1724; --accent:#38bdf8; --muted:#94a3b8; --ok:#a3e635; --danger:#ff6b6b; --text:#e6eef8;
-    }
+    :root{--bg:#071029;--card:#0f1724;--accent:#38bdf8;--muted:#94a3b8;--ok:#a3e635;--danger:#ff6b6b;--text:#e6eef8}
     *{box-sizing:border-box}
     html,body{height:100%;margin:0}
-    body{
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      background:linear-gradient(180deg,#071026 0%, #071229 100%);
-      color:var(--text);
-      font-family:Inter,system-ui,Arial,Helvetica,sans-serif;
-      padding:20px;
-    }
-    .wrap{
-      width:460px; max-width:100%;
-      background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
-      border-radius:12px;
-      padding:20px;
-      box-shadow: 0 10px 40px rgba(2,6,23,0.6);
-    }
-    h1{margin:0 0 10px;font-size:20px;text-align:center}
-    label{display:block;color:var(--muted);font-size:13px;margin-bottom:6px}
-    textarea{
-      width:100%; min-height:110px; resize:vertical;
-      padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);
-      background:#061226;color:var(--text);font-size:14px;
-    }
+    body{display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg,#071026 0%, #071229 100%);color:var(--text);font-family:Inter,system-ui,Arial,Helvetica,sans-serif;padding:20px}
+    .wrap{width:680px;max-width:100%;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border-radius:12px;padding:20px;box-shadow:0 10px 40px rgba(2,6,23,0.6)}
+    h1{margin:0 0 10px;font-size:20px}
+    textarea{width:100%;min-height:110px;resize:vertical;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:#061226;color:var(--text);font-size:14px}
     .controls{display:flex;gap:8px;margin-top:12px}
-    .controls button{
-      flex:1;padding:11px;border-radius:8px;border:none;background:var(--accent);color:#022;font-weight:700;cursor:pointer;
-    }
-    .controls button[disabled]{opacity:.6;cursor:default}
+    .controls button{flex:1;padding:11px;border-radius:8px;border:none;background:var(--accent);color:#022;font-weight:700;cursor:pointer}
     #status{margin-top:12px;color:var(--muted);font-size:13px;min-height:18px}
+    video{width:100%;margin-top:14px;border-radius:8px;background:#000;display:none}
+    .trace{margin-top:12px;background:#071226;padding:10px;border-radius:8px;color:#cfe9ff;max-height:240px;overflow:auto;font-size:12px}
     .error{color:var(--danger);font-weight:600}
     .ok{color:var(--ok);font-weight:600}
-    video{width:100%;margin-top:14px;border-radius:8px;background:#000;display:none}
-    .small{font-size:12px;color:var(--muted)}
-    .spinner{
-      display:inline-block;width:16px;height:16px;border-radius:50%;
-      border:3px solid rgba(255,255,255,0.08); border-top-color:var(--accent); animation:spin 1s linear infinite; vertical-align:middle;margin-right:8px;
-    }
-    @keyframes spin{to{transform:rotate(360deg)}}
   </style>
 </head>
 <body>
-  <main class="wrap" role="main">
-    <h1>AI Video Generator</h1>
-
-    <label for="prompt">Prompt</label>
-    <textarea id="prompt" placeholder="e.g. A small robot dancing in a neon city at night, cinematic, 4s"></textarea>
-
+  <main class="wrap">
+    <h1>AI Video Generator (Robust)</h1>
+    <textarea id="prompt" placeholder="Describe your video... e.g. 'a small robot dancing in neon city'"></textarea>
     <div class="controls">
-      <button id="generateBtn">Generate Video</button>
-      <button id="stopBtn" style="background:#334155;color:var(--text)">Stop</button>
+      <button id="generateBtn">Generate</button>
+      <button id="clearBtn" style="background:#334155;color:var(--text)">Clear</button>
     </div>
-
-    <div id="status" class="small">Ready</div>
-
+    <div id="status">Ready</div>
     <video id="video" controls playsinline></video>
+    <pre id="trace" class="trace" style="display:none"></pre>
   </main>
 
   <script>
-    (function () {
-      // Use same-origin endpoint or full URL if needed:
-      const backendURL = "/generate"; // or "https://ai-vedos.onrender.com/generate"
+    const backend = "/generate"; // same-origin; use full URL if different origin
+    const promptEl = document.getElementById('prompt');
+    const genBtn = document.getElementById('generateBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const statusEl = document.getElementById('status');
+    const videoEl = document.getElementById('video');
+    const traceEl = document.getElementById('trace');
 
-      const promptEl = document.getElementById("prompt");
-      const genBtn = document.getElementById("generateBtn");
-      const stopBtn = document.getElementById("stopBtn");
-      const statusEl = document.getElementById("status");
-      const videoEl = document.getElementById("video");
+    function setStatus(txt, cls) {
+      statusEl.textContent = txt;
+      statusEl.className = cls || '';
+    }
 
-      let controller = null; // AbortController
+    genBtn.addEventListener('click', async () => {
+      const prompt = promptEl.value.trim();
+      if (!prompt) return alert('Enter a prompt');
 
-      function setStatus(text, cls) {
-        statusEl.textContent = text;
-        statusEl.className = (cls ? cls : "") + " small";
-      }
+      setStatus('Sending request… (this can take 20–90s)', 'small');
+      genBtn.disabled = true;
+      videoEl.style.display = 'none';
+      videoEl.src = '';
+      traceEl.style.display = 'none';
+      traceEl.textContent = '';
 
-      function disableUI(val) {
-        genBtn.disabled = val;
-        stopBtn.disabled = !val;
-      }
+      try {
+        const resp = await fetch(backend, {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ prompt })
+        });
 
-      async function generate() {
-        const prompt = promptEl.value.trim();
-        if (!prompt) { alert("Please enter a prompt"); return; }
+        // read body exactly once
+        const raw = await resp.text();
+        let data = null;
+        try { data = raw ? JSON.parse(raw) : null; } catch (e) { data = null; }
 
-        disableUI(true);
-        videoEl.style.display = "none";
-        videoEl.src = "";
-        setStatus("Sending request...", "");
-
-        // abort previous
-        if (controller) {
-          try { controller.abort(); } catch {}
+        if (!resp.ok) {
+          const errMsg = (data && (data.error || data.details)) || raw || `HTTP ${resp.status}`;
+          setStatus('Generation failed: ' + errMsg, 'error');
+          traceEl.style.display = 'block';
+          traceEl.textContent = raw || JSON.stringify(data, null, 2);
+          return;
         }
-        controller = new AbortController();
 
-        try {
-          const resp = await fetch(backendURL, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ prompt }),
-            signal: controller.signal
-          });
-
-          // Read body exactly once as text, then try parse JSON
-          const raw = await resp.text();
-
-          // Try parse JSON
-          let data = null;
-          try {
-            data = raw ? JSON.parse(raw) : null;
-          } catch (e) {
-            // Not JSON — keep raw text for error message
-            data = null;
+        // success path
+        if (data && data.ok && data.video) {
+          const url = Array.isArray(data.video) ? data.video[0] : data.video;
+          setStatus('Video ready — loading...', 'ok');
+          videoEl.src = url;
+          videoEl.style.display = 'block';
+          videoEl.oncanplay = () => { try { videoEl.play(); } catch(e){} };
+          // show the trace if present
+          if (data.trace) {
+            traceEl.style.display = 'block';
+            traceEl.textContent = JSON.stringify(data.trace, null, 2);
           }
-
-          if (!resp.ok) {
-            // If server returned JSON error, show it; otherwise show raw text
-            const serverMsg = data?.error || data?.details || raw || `HTTP ${resp.status}`;
-            throw new Error(serverMsg);
-          }
-
-          // At this point resp.ok is true
-          if (!data || !data.video) {
-            // If server returned non-JSON success (unlikely), attempt to detect URL in raw
-            if (typeof raw === "string" && raw.startsWith("http")) {
-              // server returned a direct URL as text
-              const url = raw.trim();
-              showVideo(url);
-              return;
-            }
-            throw new Error("No video returned. Response: " + (raw || JSON.stringify(data)));
-          }
-
-          const videoUrl = Array.isArray(data.video) ? data.video[0] : data.video;
-          showVideo(videoUrl);
-        } catch (err) {
-          if (err.name === "AbortError") {
-            setStatus("Generation aborted.", "error");
-          } else {
-            console.error("Generation error:", err);
-            setStatus("Generation failed: " + (err.message || "unknown"), "error");
-            alert("Generation failed: " + (err.message || "See console/logs."));
-          }
-        } finally {
-          disableUI(false);
+          return;
         }
+
+        // models may return { video: ... } without ok flag — handle that too
+        if (data && data.video) {
+          const url = Array.isArray(data.video) ? data.video[0] : data.video;
+          setStatus('Video ready — loading...', 'ok');
+          videoEl.src = url; videoEl.style.display = 'block';
+          return;
+        }
+
+        // final fallback — no video
+        setStatus('Generation failed: No video returned', 'error');
+        traceEl.style.display = 'block';
+        traceEl.textContent = raw || JSON.stringify(data, null, 2);
+
+      } catch (err) {
+        console.error('Request error', err);
+        setStatus('Network/server error: ' + (err.message || err), 'error');
+        traceEl.style.display = 'block';
+        traceEl.textContent = String(err);
+      } finally {
+        genBtn.disabled = false;
       }
+    });
 
-      function showVideo(url) {
-        setStatus("Video ready — loading...", "ok");
-        videoEl.src = url;
-        videoEl.style.display = "block";
-        videoEl.oncanplay = () => {
-          try { videoEl.play(); } catch {}
-        };
-      }
-
-      genBtn.addEventListener("click", generate);
-
-      stopBtn.addEventListener("click", () => {
-        if (controller) {
-          controller.abort();
-          controller = null;
-        }
-        disableUI(false);
-        setStatus("Stopped by user", "small");
-      });
-
-      promptEl.addEventListener("keydown", (e) => {
-        if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-          generate();
-        }
-      });
-
-      // initial state
-      disableUI(false);
-      setStatus("Ready — enter prompt and click Generate");
-    })();
+    clearBtn.addEventListener('click', () => {
+      promptEl.value = '';
+      videoEl.style.display = 'none';
+      videoEl.src = '';
+      traceEl.style.display = 'none';
+      traceEl.textContent = '';
+      setStatus('Ready');
+    });
   </script>
 </body>
 </html>
+
