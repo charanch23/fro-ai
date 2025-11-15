@@ -69,9 +69,8 @@
 
   <script>
     (function () {
-      // If your backend is on same origin use "/generate".
-      // Or replace with full URL: "https://ai-vedos.onrender.com/generate"
-      const backendURL = "/generate";
+      // Use same-origin endpoint or full URL if needed:
+      const backendURL = "/generate"; // or "https://ai-vedos.onrender.com/generate"
 
       const promptEl = document.getElementById("prompt");
       const genBtn = document.getElementById("generateBtn");
@@ -79,11 +78,11 @@
       const statusEl = document.getElementById("status");
       const videoEl = document.getElementById("video");
 
-      let controller = null; // for aborting a request
+      let controller = null; // AbortController
 
       function setStatus(text, cls) {
         statusEl.textContent = text;
-        statusEl.className = cls ? cls + " small" : "small";
+        statusEl.className = (cls ? cls : "") + " small";
       }
 
       function disableUI(val) {
@@ -95,68 +94,77 @@
         const prompt = promptEl.value.trim();
         if (!prompt) { alert("Please enter a prompt"); return; }
 
-        setStatus(""); // clear
         disableUI(true);
         videoEl.style.display = "none";
         videoEl.src = "";
+        setStatus("Sending request...", "");
 
-        // create abort controller so user can stop
+        // abort previous
         if (controller) {
-          try { controller.abort(); } catch (e) {}
+          try { controller.abort(); } catch {}
         }
         controller = new AbortController();
-
-        setStatus("Sending request to backend...", "small");
 
         try {
           const resp = await fetch(backendURL, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ prompt }),
-            signal: controller.signal,
+            signal: controller.signal
           });
 
-          // if non-JSON responses might occur, handle gracefully
-          const contentType = resp.headers.get("content-type") || "";
-          let data;
+          // Read body exactly once as text, then try parse JSON
+          const raw = await resp.text();
+
+          // Try parse JSON
+          let data = null;
           try {
-            data = await resp.json();
+            data = raw ? JSON.parse(raw) : null;
           } catch (e) {
-            // Not JSON — show raw text
-            const txt = await resp.text();
-            throw new Error("Non-JSON response from server: " + txt);
+            // Not JSON — keep raw text for error message
+            data = null;
           }
 
           if (!resp.ok) {
-            // show server-provided details if there
-            const errMsg = data?.error || (data?.details && JSON.stringify(data.details)) || JSON.stringify(data);
-            throw new Error("Server error: " + errMsg);
+            // If server returned JSON error, show it; otherwise show raw text
+            const serverMsg = data?.error || data?.details || raw || `HTTP ${resp.status}`;
+            throw new Error(serverMsg);
           }
 
-          // expected { video: "https://..." } or { video: ["https://...", ...] }
+          // At this point resp.ok is true
           if (!data || !data.video) {
-            throw new Error("No video returned. Response: " + JSON.stringify(data));
+            // If server returned non-JSON success (unlikely), attempt to detect URL in raw
+            if (typeof raw === "string" && raw.startsWith("http")) {
+              // server returned a direct URL as text
+              const url = raw.trim();
+              showVideo(url);
+              return;
+            }
+            throw new Error("No video returned. Response: " + (raw || JSON.stringify(data)));
           }
 
           const videoUrl = Array.isArray(data.video) ? data.video[0] : data.video;
-
-          setStatus("Video ready — loading...", "ok");
-          videoEl.src = videoUrl;
-          videoEl.style.display = "block";
-          // autoplay when ready
-          videoEl.oncanplay = () => {
-            try { videoEl.play(); } catch (e) {}
-          };
+          showVideo(videoUrl);
         } catch (err) {
           if (err.name === "AbortError") {
-            setStatus("Generation aborted by user.", "error");
+            setStatus("Generation aborted.", "error");
           } else {
             console.error("Generation error:", err);
             setStatus("Generation failed: " + (err.message || "unknown"), "error");
+            alert("Generation failed: " + (err.message || "See console/logs."));
           }
         } finally {
           disableUI(false);
         }
+      }
+
+      function showVideo(url) {
+        setStatus("Video ready — loading...", "ok");
+        videoEl.src = url;
+        videoEl.style.display = "block";
+        videoEl.oncanplay = () => {
+          try { videoEl.play(); } catch {}
+        };
       }
 
       genBtn.addEventListener("click", generate);
@@ -170,7 +178,6 @@
         setStatus("Stopped by user", "small");
       });
 
-      // small UX: Enter+Ctrl to submit
       promptEl.addEventListener("keydown", (e) => {
         if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
           generate();
