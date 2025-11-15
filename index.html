@@ -1,120 +1,186 @@
-<!-- ===========================
-     index.html
-=========================== -->
-<!DOCTYPE html>
-<html>
+<!doctype html>
+<html lang="en">
 <head>
-  <title>AI Video Generator</title>
   <meta charset="utf-8" />
-  <link rel="stylesheet" href="style.css" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>AI Video Generator</title>
+  <style>
+    :root{
+      --bg:#071029; --card:#0f1724; --accent:#38bdf8; --muted:#94a3b8; --ok:#a3e635; --danger:#ff6b6b; --text:#e6eef8;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0}
+    body{
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      background:linear-gradient(180deg,#071026 0%, #071229 100%);
+      color:var(--text);
+      font-family:Inter,system-ui,Arial,Helvetica,sans-serif;
+      padding:20px;
+    }
+    .wrap{
+      width:460px; max-width:100%;
+      background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+      border-radius:12px;
+      padding:20px;
+      box-shadow: 0 10px 40px rgba(2,6,23,0.6);
+    }
+    h1{margin:0 0 10px;font-size:20px;text-align:center}
+    label{display:block;color:var(--muted);font-size:13px;margin-bottom:6px}
+    textarea{
+      width:100%; min-height:110px; resize:vertical;
+      padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);
+      background:#061226;color:var(--text);font-size:14px;
+    }
+    .controls{display:flex;gap:8px;margin-top:12px}
+    .controls button{
+      flex:1;padding:11px;border-radius:8px;border:none;background:var(--accent);color:#022;font-weight:700;cursor:pointer;
+    }
+    .controls button[disabled]{opacity:.6;cursor:default}
+    #status{margin-top:12px;color:var(--muted);font-size:13px;min-height:18px}
+    .error{color:var(--danger);font-weight:600}
+    .ok{color:var(--ok);font-weight:600}
+    video{width:100%;margin-top:14px;border-radius:8px;background:#000;display:none}
+    .small{font-size:12px;color:var(--muted)}
+    .spinner{
+      display:inline-block;width:16px;height:16px;border-radius:50%;
+      border:3px solid rgba(255,255,255,0.08); border-top-color:var(--accent); animation:spin 1s linear infinite; vertical-align:middle;margin-right:8px;
+    }
+    @keyframes spin{to{transform:rotate(360deg)}}
+  </style>
 </head>
 <body>
-  <div class="container">
-    <h2>AI VIDEO GENERATOR</h2>
+  <main class="wrap" role="main">
+    <h1>AI Video Generator</h1>
 
-    <textarea id="prompt" placeholder="Describe your video..."></textarea>
+    <label for="prompt">Prompt</label>
+    <textarea id="prompt" placeholder="e.g. A small robot dancing in a neon city at night, cinematic, 4s"></textarea>
 
-    <button id="generateBtn">Generate Video</button>
+    <div class="controls">
+      <button id="generateBtn">Generate Video</button>
+      <button id="stopBtn" style="background:#334155;color:var(--text)">Stop</button>
+    </div>
 
-    <div id="status"></div>
+    <div id="status" class="small">Ready</div>
 
-    <video id="video" controls></video>
-  </div>
+    <video id="video" controls playsinline></video>
+  </main>
 
-  <script src="app.js"></script>
+  <script>
+    (function () {
+      // If your backend is on same origin use "/generate".
+      // Or replace with full URL: "https://ai-vedos.onrender.com/generate"
+      const backendURL = "/generate";
+
+      const promptEl = document.getElementById("prompt");
+      const genBtn = document.getElementById("generateBtn");
+      const stopBtn = document.getElementById("stopBtn");
+      const statusEl = document.getElementById("status");
+      const videoEl = document.getElementById("video");
+
+      let controller = null; // for aborting a request
+
+      function setStatus(text, cls) {
+        statusEl.textContent = text;
+        statusEl.className = cls ? cls + " small" : "small";
+      }
+
+      function disableUI(val) {
+        genBtn.disabled = val;
+        stopBtn.disabled = !val;
+      }
+
+      async function generate() {
+        const prompt = promptEl.value.trim();
+        if (!prompt) { alert("Please enter a prompt"); return; }
+
+        setStatus(""); // clear
+        disableUI(true);
+        videoEl.style.display = "none";
+        videoEl.src = "";
+
+        // create abort controller so user can stop
+        if (controller) {
+          try { controller.abort(); } catch (e) {}
+        }
+        controller = new AbortController();
+
+        setStatus("Sending request to backend...", "small");
+
+        try {
+          const resp = await fetch(backendURL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ prompt }),
+            signal: controller.signal,
+          });
+
+          // if non-JSON responses might occur, handle gracefully
+          const contentType = resp.headers.get("content-type") || "";
+          let data;
+          try {
+            data = await resp.json();
+          } catch (e) {
+            // Not JSON — show raw text
+            const txt = await resp.text();
+            throw new Error("Non-JSON response from server: " + txt);
+          }
+
+          if (!resp.ok) {
+            // show server-provided details if there
+            const errMsg = data?.error || (data?.details && JSON.stringify(data.details)) || JSON.stringify(data);
+            throw new Error("Server error: " + errMsg);
+          }
+
+          // expected { video: "https://..." } or { video: ["https://...", ...] }
+          if (!data || !data.video) {
+            throw new Error("No video returned. Response: " + JSON.stringify(data));
+          }
+
+          const videoUrl = Array.isArray(data.video) ? data.video[0] : data.video;
+
+          setStatus("Video ready — loading...", "ok");
+          videoEl.src = videoUrl;
+          videoEl.style.display = "block";
+          // autoplay when ready
+          videoEl.oncanplay = () => {
+            try { videoEl.play(); } catch (e) {}
+          };
+        } catch (err) {
+          if (err.name === "AbortError") {
+            setStatus("Generation aborted by user.", "error");
+          } else {
+            console.error("Generation error:", err);
+            setStatus("Generation failed: " + (err.message || "unknown"), "error");
+          }
+        } finally {
+          disableUI(false);
+        }
+      }
+
+      genBtn.addEventListener("click", generate);
+
+      stopBtn.addEventListener("click", () => {
+        if (controller) {
+          controller.abort();
+          controller = null;
+        }
+        disableUI(false);
+        setStatus("Stopped by user", "small");
+      });
+
+      // small UX: Enter+Ctrl to submit
+      promptEl.addEventListener("keydown", (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+          generate();
+        }
+      });
+
+      // initial state
+      disableUI(false);
+      setStatus("Ready — enter prompt and click Generate");
+    })();
+  </script>
 </body>
 </html>
-
-<!-- ===========================
-     style.css
-=========================== -->
-<style>
-body {
-  font-family: Arial, sans-serif;
-  background: #0f172a;
-  color: white;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  height: 100vh;
-  margin: 0;
-}
-.container {
-  background: #1e293b;
-  padding: 25px;
-  border-radius: 12px;
-  width: 420px;
-  box-shadow: 0 0 20px #000;
-  text-align: center;
-}
-textarea {
-  width: 100%;
-  height: 90px;
-  margin-top: 10px;
-  padding: 10px;
-  border-radius: 8px;
-  background: #0f172a;
-  color: white;
-  border: 1px solid #334155;
-}
-button {
-  width: 100%;
-  padding: 12px;
-  background: #38bdf8;
-  color: #000;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  margin-top: 10px;
-  font-size: 16px;
-  font-weight: bold;
-}
-#status {
-  margin-top: 12px;
-  font-size: 14px;
-  color: #a3e635;
-}
-video {
-  width: 100%;
-  margin-top: 15px;
-  display: none;
-  border-radius: 8px;
-}
-</style>
-
-<!-- ===========================
-     app.js
-=========================== -->
-<script>
-const backendURL = "https://ai-vedos.onrender.com/generate";
-
-const btn = document.getElementById("generateBtn");
-const promptEl = document.getElementById("prompt");
-const statusEl = document.getElementById("status");
-const videoEl = document.getElementById("video");
-
-btn.onclick = async () => {
-  const prompt = promptEl.value.trim();
-  if (!prompt) return alert("Please enter a prompt!");
-
-  statusEl.textContent = "Generating video... This will take 15–40 seconds.";
-  videoEl.style.display = "none";
-  videoEl.src = "";
-
-  const res = await fetch(backendURL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt })
-  });
-
-  const data = await res.json();
-
-  if (data.video) {
-    statusEl.textContent = "Video Ready!";
-    videoEl.src = data.video;
-    videoEl.style.display = "block";
-  } else {
-    statusEl.textContent = "Generation failed. Try again.";
-  }
-};
-</script>
